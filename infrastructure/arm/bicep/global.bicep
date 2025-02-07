@@ -5,49 +5,12 @@
 @description('The location targeted.')
 param location string = resourceGroup().location
 
-@minLength(3)
-@description('The prefix name (for instance aio).')
-param prefix string
+@minLength(10)
+@description('The suffix name .')
+param suffix string
 
-@minLength(3)
-@description('The unique identifier.')
-param uid string
-
-@minLength(3)
-@description('The environment name (for instance dev or rel).')
-param environment string
-
-@minLength(3)
-@description('The layer name.')
-param layer string = 'corp'
-
-// ------------------------------------------------------------
-// Parameters - Networking
-// ------------------------------------------------------------
-
-@description('The virtual network settings.')
-#disable-next-line no-unused-params
-param vnetSettings object
-
-@description('The networking self host agent settings.')
-#disable-next-line no-unused-params
-param agentSettings object
-
-@description('The networking bastion settings.')
-#disable-next-line no-unused-params
-param bastionSettings object
-
-@description('The networking cloud settings.')
-#disable-next-line no-unused-params
-param cloudSettings object
-
-@description('The networking corp settings.')
-param corpSettings object
-
-@description('The networking sites settings.')
-#disable-next-line no-unused-params
-param sitesSettings array
-
+@description('Client IP address.')
+param ipAddress string
 // ------------------------------------------------------------
 // Parameters - Virtual Machine (Cluster)
 // ------------------------------------------------------------
@@ -58,93 +21,143 @@ param vmAdminUserName string
 @description('Specifies admin public key.')
 param vmAdminPublicKey string
 
-@description('Specifies image reference.')
-param vmImageReference object
-
 @description('Specifies the size.')
 param vmSize string
-
-@description('Specifies managed identity resource ID.')
-param vmManagedIdentityId string
-
-@allowed([
-  'Enabled'
-  'Disabled'
-])
-@description('Specifies the status of the auto shutdown.')
-param vmAutoShutdownStatus string
-
-@description('Specifies the time (24h HHmm format) of the auto shutdown.')
-@minLength(4)
-@maxLength(4)
-param vmAutoShutdownTime string
-
-@description('Specifies the time zone of the auto shutdown.')
-param vmAutoShutdownTimeZoneId string
 
 @description('Specifies the base64 encoded script to run on the Virtual Machine.')
 param vmScript string
 
+@description('Specifies the TCP port associated with the proxy.')
+param vmProxyPort string
 // ------------------------------------------------------------
-// Parameters - Virtual Machine (Proxy)
-// ------------------------------------------------------------
-
-@description('Specifies admin username.')
-param proxyAdminUserName string
-
-@description('Specifies admin public key.')
-param proxyAdminPublicKey string
-
-@description('Specifies image reference.')
-param proxyImageReference object
-
-@description('Specifies the size.')
-param proxySize string
-
-@allowed([
-  'Enabled'
-  'Disabled'
-])
-@description('Specifies the status of the auto shutdown.')
-param proxyAutoShutdownStatus string
-
-@description('Specifies the time (24h HHmm format) of the auto shutdown.')
-@minLength(4)
-@maxLength(4)
-param proxyAutoShutdownTime string
-
-@description('Specifies the time zone of the auto shutdown.')
-param proxyAutoShutdownTimeZoneId string
-
-@description('Specifies the base64 encoded script to run on the Virtual Machine.')
-param proxyScript string
-
-@description('Specifies whether to install the proxy.')
-param installProxy bool
-
-@description('The name of the Azure Key Vault.')
-param keyVaultName string
-
-// ------------------------------------------------------------
-// Variables
+// Variables 
 // ------------------------------------------------------------
 
-var resourceSuffix = '${prefix}${uid}${environment}${layer}'
+var vnetName = 'vnet${suffix}'
+var resourceGroupName = 'rg${suffix}'
+
 var resourceTags = {
-  prefix: prefix
-  uid: uid
-  environment: environment
-  layer: layer
+  suffix: suffix
 }
 
-var vnetName = 'vnet${prefix}${uid}${environment}cloud'
-var cloudResourceGroupName = 'rg${prefix}${uid}${environment}cloud'
+var vnetAddressPrefix = '10.0.0.0/8'
+var snetProxyAddressPrefix = '10.0.0.0/24'
+var snetProxyName = 'snet${suffix}proxy'
+var nsgProxyName = 'nsg${suffix}proxy'
+var nicProxyName = 'nic${suffix}proxy'
+var pipProxyAddressName = 'pip${suffix}proxy'
+
+resource nsgProxy 'Microsoft.Network/networkSecurityGroups@2020-05-01' = {
+  name: nsgProxyName
+  location: location
+  properties: {
+    securityRules: [
+      {
+        name: 'ssh_rule'
+        properties: {
+          description: 'Locks inbound down to ssh default port 22.'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '22'
+          sourceAddressPrefix: ipAddress
+          destinationAddressPrefix: '*'
+          access: 'Allow'
+          priority: 110
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'proxy_rule'
+        properties: {
+          description: 'Locks inbound down to proxy port.'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: vmProxyPort
+          sourceAddressPrefix: ipAddress
+          destinationAddressPrefix: '*'
+          access: 'Allow'
+          priority: 120
+          direction: 'Inbound'
+        }
+      }
+    ]
+  }
+}
+
+resource vnet 'Microsoft.Network/virtualNetworks@2021-08-01' = {
+  name: vnetName
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        vnetAddressPrefix
+      ]
+    }
+    subnets: [
+      {
+        name: snetProxyName
+        properties: {
+          addressPrefix: snetProxyAddressPrefix
+          networkSecurityGroup: {
+            id: nsgProxy.id
+          }
+        }
+      }
+    ]
+  }
+}
+
+resource pipProxyAddress 'Microsoft.Network/publicIPAddresses@2020-05-01' = {
+  name: pipProxyAddressName
+  location: location
+  properties: {
+    dnsSettings: {
+      domainNameLabel: pipProxyAddressName
+    }
+    publicIPAllocationMethod: 'Dynamic'
+  }
+  sku: {
+    name: 'Basic'
+  }
+}
+
+resource networkInterfaceProxy 'Microsoft.Network/networkInterfaces@2020-05-01' = {
+  name: nicProxyName
+  location: location
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'ipconfigProxy'
+        properties: {
+          publicIPAddress: {
+            id: pipProxyAddress.id
+          }
+          privateIPAllocationMethod: 'Dynamic'
+          subnet: {
+            id: resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, snetProxyName)
+          }
+        }
+      }
+    ]
+  }
+  dependsOn: [
+    vnet
+    nsgProxy
+  ]
+}
 
 // ------------------------------------------------------------
 // Resource - Virtual Machine (Proxy)
 // ------------------------------------------------------------
 
-var proxyName = 'proxy${resourceSuffix}'
+var proxyName = 'proxy${suffix}'
+var proxyImageReference = {
+    publisher: 'Canonical'
+    offer: '0001-com-ubuntu-server-jammy'
+    sku: '22_04-lts-gen2'
+    version: 'latest'
+  }
+
 
 // create proxy virtual machine
 module proxyVirtualMachine './modules/proxyVirtualMachine.bicep'= {
@@ -152,15 +165,64 @@ module proxyVirtualMachine './modules/proxyVirtualMachine.bicep'= {
   params: {
     location: location
     name: proxyName
-    size: proxySize
+    size: vmSize
     imageReference: proxyImageReference
-    adminUserName: proxyAdminUserName
-    adminPublicKey: proxyAdminPublicKey
-    frontSubnetId: resourceId(cloudResourceGroupName, 'Microsoft.Network/virtualNetworks/subnets', vnetName, cloudSettings.subnet.name)
-    backSubnetId: resourceId(cloudResourceGroupName, 'Microsoft.Network/virtualNetworks/subnets', vnetName, corpSettings.subnet.name)
-    frontIpAddress: corpSettings.proxy.frontIpAddress
-    backIpAddress: corpSettings.proxy.backIpAddress
-    script: proxyScript
+    adminUserName: vmAdminUserName
+    adminPublicKey: vmAdminPublicKey
+    nicId: resourceId(resourceGroupName, 'Microsoft.Network/networkInterfaces', nicProxyName)
+    script: vmScript
     resourceTags: resourceTags
   }
+  dependsOn: [
+    vnet
+    nsgProxy
+    networkInterfaceProxy
+    pipProxyAddress
+  ]  
 }
+
+// ------------------------------------------------------------
+// Resources - Storage
+// ------------------------------------------------------------
+var storageName = 'sa${suffix}'
+var storageContainerName = 'proxylogs'
+
+// create storage account
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageName
+  location: location
+  tags: resourceTags
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+  properties: {
+    isHnsEnabled: true
+    allowBlobPublicAccess: false
+    supportsHttpsTrafficOnly: true
+    minimumTlsVersion: 'TLS1_2'
+    publicNetworkAccess: 'Disabled'
+    networkAcls: {
+      defaultAction: 'Deny'
+    }
+  }
+  dependsOn: [
+    vnet
+  ]
+}
+
+// create storage container (schemas)
+resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  name: '${storageName}/default/${storageContainerName}'
+  properties: {
+    publicAccess: 'None'
+    defaultEncryptionScope: '$account-encryption-key'
+    denyEncryptionScopeOverride: false
+  }
+  dependsOn: [
+    storageAccount
+  ]
+}
+
+output AZURE_RESOURCE_PROXY_IP_ADDRESS string = pipProxyAddress.properties.ipAddress
+output AZURE_RESOURCE_PROXY_DNS_NAME string = pipProxyAddress.properties.dnsSettings.fqdn

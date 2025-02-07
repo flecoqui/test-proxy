@@ -27,12 +27,6 @@ param adminUserName string
 @description('Specifies the SSH public key.')
 param adminPublicKey string
 
-@allowed([
-  'Enabled'
-  'Disabled'
-])
-
-
 @description('Specifies the base64 encoded script to run on the Virtual Machine.')
 param script string
 
@@ -40,62 +34,12 @@ param script string
 // Parameters - Networking
 // ------------------------------------------------------------
 
-@description('Specifies the id of the front subnet.')
-param frontSubnetId string
-
-@description('Specifies the id of the back subnet.')
-param backSubnetId string
-
-@description('Specifies the ip address of front nic.')
-param frontIpAddress string
-
-@description('Specifies the ip address of back nic.')
-param backIpAddress string
+@description('Specifies the id of the nic card.')
+param nicId string
 
 // ------------------------------------------------------------
 // Virtual Machine
 // ------------------------------------------------------------
-
-// create network interface
-resource frontNetworkInterface 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: '${name}-front-nic'
-  location: location
-  tags: resourceTags
-  properties: {
-    ipConfigurations: [
-      {
-        name: 'ipconfigfront'
-        properties: {
-          subnet: {
-            id: frontSubnetId
-          }
-          privateIPAddress: frontIpAddress
-          privateIPAllocationMethod: 'Static'
-        }
-      }
-    ]
-  }
-}
-
-resource backNetworkInterface 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: '${name}-back-nic'
-  location: location
-  tags: resourceTags
-  properties: {
-    ipConfigurations: [
-      {
-        name: 'ipconfigback'
-        properties: {
-          subnet: {
-            id: backSubnetId
-          }
-          privateIPAddress: backIpAddress
-          privateIPAllocationMethod: 'Static'
-        }
-      }
-    ]
-  }
-}
 
 // create virtual machine
 resource proxyVirtualMachine 'Microsoft.Compute/virtualMachines@2024-03-01' = {
@@ -137,17 +81,11 @@ resource proxyVirtualMachine 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: frontNetworkInterface.id
+          id: nicId
           properties: {
             primary: true
           }            
-        }
-        {
-          id: backNetworkInterface.id
-          properties: {
-            primary: false
-          }            
-        }        
+        }      
       ]
     }
     //checkov:skip=CKV_AZURE_50:Virtual Machine extensions are installed
@@ -180,3 +118,4 @@ resource customScriptExtension 'Microsoft.Compute/virtualMachines/extensions@202
 // ------------------------------------------------------------
 
 output id string = proxyVirtualMachine.id
+output name string = proxyVirtualMachine.name
