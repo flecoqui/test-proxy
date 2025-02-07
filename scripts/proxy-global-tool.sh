@@ -1236,7 +1236,7 @@ cat << '${EOFILE}' > ./proxy-global-tool.sh
 $(cat ./scripts/proxy-global-tool.sh)
 ${EOFILE}
 chmod 0755 ./proxy-global-tool.sh
-./proxy-global-tool.sh -a installproxy -k ${AZURE_RESOURCE_PROXY_KIND} -p ${AZURE_RESOURCE_PROXY_PORT} -u ${AZURE_RESOURCE_PROXY_USERNAME} -w ${AZURE_RESOURCE_PROXY_PASSWORD} -d ${AZURE_RESOURCE_PROXY_DOMAIN_LIST} -i ${AZURE_RESOURCE_SOURCE_IP_ADDRESS} 
+./proxy-global-tool.sh -a installproxy -k ${AZURE_RESOURCE_PROXY_KIND} -p ${AZURE_RESOURCE_PROXY_PORT} -u ${AZURE_RESOURCE_PROXY_USERNAME} -w ${AZURE_RESOURCE_PROXY_PASSWORD} -d "${AZURE_RESOURCE_PROXY_DOMAIN_LIST}" -i ${AZURE_RESOURCE_SOURCE_IP_ADDRESS} 
 ${EOFMAIN}
   
   # echo "$TEMPDIR/script.sh"
