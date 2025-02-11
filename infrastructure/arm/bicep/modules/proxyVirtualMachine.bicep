@@ -69,9 +69,6 @@ resource proxyVirtualMachine 'Microsoft.Compute/virtualMachines@2024-03-01' = {
         }
       }
     }
-    securityProfile: {
-      encryptionAtHost: true
-    }
     storageProfile: {
       imageReference: imageReference
       osDisk: {

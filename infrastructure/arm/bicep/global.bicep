@@ -224,5 +224,5 @@ resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   ]
 }
 
-output AZURE_RESOURCE_PROXY_IP_ADDRESS string = pipProxyAddress.properties.ipAddress
 output AZURE_RESOURCE_PROXY_DNS_NAME string = pipProxyAddress.properties.dnsSettings.fqdn
+output AZURE_RESOURCE_PROXY_PORT string = vmProxyPort

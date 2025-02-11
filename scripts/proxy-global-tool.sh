@@ -57,7 +57,7 @@ logFile(){
     sudo mkdir -p "${LOG_DIR}" >/dev/null || true 
   fi
   CURRENT_DATE=$(date +"%y/%m/%d-%H:%M:%S")
-  echo "${CURRENT_DATE}: $1" | sudo tee -a "${LOG_FILE}"
+  echo "${CURRENT_DATE}: $1" | sudo tee -a "${LOG_FILE}" > /dev/null
   # Check the size of the log file
   FILESIZE=$(sudo stat -c%s "$LOG_FILE")
   # Backup the log file if it exceeds the maximum size
@@ -217,6 +217,8 @@ checkLoginAndSubscription() {
         fi
     fi
 }
+
+
 ##############################################################################
 #- getResourceGroupName
 ##############################################################################
@@ -407,27 +409,103 @@ getDeploymentName(){
 }
 
 ##############################################################################
+#- removevarinfile
+##############################################################################
+removevarinfile() {
+    FILE=$1
+    VARIABLE=$2
+    # Removing variable with single line "double quote" value"
+    RESULT=$(grep "${VARIABLE}=\"[^\"]*\"" "${FILE}") 2>/dev/null || true
+    if [ -n "${RESULT}" ]
+    then
+        #logInfo "${VARIABLE} Found in  ${FILE}, Removing now...";
+        sudo sed -i  "/${VARIABLE}=/d" "${FILE}"
+        return
+    fi
+    # Removing multi-lines variable between ""
+    RESULT=$(grep "${VARIABLE}=\"" "${FILE}") 2>/dev/null || true
+    if [ -n "${RESULT}" ]
+    then
+        #logInfo "${VARIABLE} Found in  ${FILE}, Removing now...";
+        sudo sed -i "/^${VARIABLE}=\"/,/\"$/{
+        /^${VARIABLE}=\"/d
+        /\"$/d
+        d
+        }" "${FILE}"       
+    fi
+    # Removing single variable
+    RESULT=$(grep "${VARIABLE}=" "${FILE}") 2>/dev/null || true
+    if [ -n "${RESULT}" ]
+    then
+        #logInfo "${VARIABLE} Found in  ${FILE}, Removing now...";
+        sudo sudo sed -i  "/${VARIABLE}=/d" "${FILE}"
+    fi
+}
+ETC_ENVIRONMENT=/etc/environment
+##############################################################################
+#- removevar
+##############################################################################
+removevar() {
+    VARIABLE=$1
+    removevarinfile "${ETC_ENVIRONMENT}" "${VARIABLE}"
+}
+##############################################################################
+#- addvarinfile
+##############################################################################
+addvarinfile() {
+    FILE=$1
+    VARIABLE=$2    
+    VALUE=$3
+    RESULT=$(grep "${VARIABLE}=" "${FILE}") 2>/dev/null || true
+    if [ -z "${RESULT}" ]; then
+        echo "${VARIABLE}=${VALUE}" | sudo tee -a "${FILE}" > /dev/null
+        RESULT=$(grep "${VARIABLE}=" "${FILE}")
+        if [ -z "${RESULT}" ]; then
+            logError "Failed to Add ${VARIABLE}, Try again!";
+        fi
+    else
+        logError "${VARIABLE} already exists : ${RESULT}"
+    fi
+}
+##############################################################################
+#- addvar
+##############################################################################
+addvar() {
+    VARIABLE=$1
+    VALUE=$2
+    addvarinfile "${ETC_ENVIRONMENT}" "${VARIABLE}" "${VALUE}"
+}
+##############################################################################
 #- updateConfigurationFile: Update configuration file
 #  arg 1: Configuration file path
 #  arg 2: Variable Name
 #  arg 3: Value
 ##############################################################################
+# updateConfigurationFile(){
+#     configFile="$1"
+#     variable="$2"
+#     value="$3"
+
+#     count=$(grep "${variable}=.*" -c < "$configFile") || true
+#     if [ "${count}" != 0 ]; then
+#         ESCAPED_REPLACE=$(printf '%s\n' "${value}" | sed -e 's/[\/&]/\\&/g')
+#         sed -i "s/${variable}=.*/${variable}=${ESCAPED_REPLACE}/g" "${configFile}"  2>/dev/null       
+#     elif [ "${count}" = 0 ]; then
+#         # shellcheck disable=SC2046
+#         if [ $(tail -c1 "${configFile}" | wc -l) -eq 0 ]; then
+#             echo "" >> "${configFile}"
+#         fi
+#         echo "${variable}=${value}" >> "${configFile}"
+#     fi
+#     printProgress "${variable}=${value}"
+# }
 updateConfigurationFile(){
     configFile="$1"
     variable="$2"
     value="$3"
-
-    count=$(grep "${variable}=.*" -c < "$configFile") || true
-    if [ "${count}" != 0 ]; then
-        ESCAPED_REPLACE=$(printf '%s\n' "${value}" | sed -e 's/[\/&]/\\&/g')
-        sed -i "s/${variable}=.*/${variable}=${ESCAPED_REPLACE}/g" "${configFile}"  2>/dev/null       
-    elif [ "${count}" = 0 ]; then
-        # shellcheck disable=SC2046
-        if [ $(tail -c1 "${configFile}" | wc -l) -eq 0 ]; then
-            echo "" >> "${configFile}"
-        fi
-        echo "${variable}=${value}" >> "${configFile}"
-    fi
+    
+    removevarinfile "${configFile}" "${variable}"
+    addvarinfile "${configFile}" "${variable}" "${value}"
     printProgress "${variable}=${value}"
 }
 ##############################################################################
@@ -473,146 +551,25 @@ readlist() {
     done < "$filename"
     echo "${list}"
 }
-
-
-#######################################################
-#- used to print out script usage
-#######################################################
-usage() {
-    echo
-    echo "Arguments:"
-    printf " -a  Sets proxy-global-tool ACTION {login, install, getsuffix, createconfig, deploy, test, undeploy}\n"
-    printf " -c  Sets the proxy-global-tool configuration file\n"
-    printf " -e  Sets the environement - by default 'dev' ('dev', 'tst', 'prd', 'val')\n"
-    printf " -s  Sets subscription id \n"
-    printf " -t  Sets tenant id\n"
-    printf " -k  Sets proxy type: 'squidproxy' or 'mitmproxy'\n"
-    printf " -p  Sets proxy port: '8008'\n"
-    printf " -u  Sets proxy username: 'azureuser'\n"
-    printf " -w  Sets proxy password: 'password'\n"
-    printf " -d  Sets proxy domains list: '.bing.com;.microsoft.com'\n"
-
-
-    echo
-    echo "Example:"
-    printf " bash ./scripts/proxy-global-tool.sh -a install \n"
-    printf " bash ./scripts/proxy-global-tool.sh -a createconfig -c ./configuration/proxytool.env -e dev \n" 
-    printf " bash ./scripts/proxy-global-tool.sh -a deploy -k squidproxy -c ./configuration/proxytool.env \n"
-    printf " bash ./scripts/proxy-global-tool.sh -a deploy -k mitmproxy -c ./configuration/proxytool.env \n"
-    printf " bash ./scripts/proxy-global-tool.sh -a deploy -k squidproxy -c ./configuration/proxytool.env -p 8080 -u azureuser -w au -d '.bing.com;.microsoft.com' \n"    
+##############################################################################
+# uninstall squid
+##############################################################################
+uninstallsquidproxy() {
+    logInfo "Updating package list (again - due to net-tools)..."
+    cmd="sudo systemctl stop squid"
+    runCommand "${cmd}" 2>/dev/null    
+    cmd="sudo systemctl disable squid"
+    runCommand "${cmd}" 2>/dev/null    
+    cmd="sudo apt-get remove -y squid"
+    runCommand "${cmd}"
+    cmd="sudo rm -r /etc/squid/*"
+    runCommand "${cmd}"
 }
-AZURE_ENVIRONMENT=dev
-ACTION=
-CONFIGURATION_FILE="$SCRIPTS_DIRECTORY/../configuration/.default.env"
-AZURE_RESOURCE_PREFIX="prx"
-AZURE_SUBSCRIPTION_ID=""
-AZURE_TENANT_ID=""   
-AZURE_REGION="eastus2"
-SSH_PUBLIC_KEY=""
-SSH_PRIVATE_KEY=""
-AZURE_VM_ADMINUSERNAME="azureuser"
-AZURE_RESOURCE_PROXY_KIND="squidproxy"
-AZURE_RESOURCE_PROXY_PORT="8080"
-AZURE_RESOURCE_PROXY_USERNAME="azureuser"
-AZURE_RESOURCE_PROXY_PASSWORD="au"
-AZURE_RESOURCE_PROXY_DOMAIN_LIST="www.bing.com;www.bing.dk"
-AZURE_RESOURCE_SOURCE_IP_ADDRESS=$(curl -s https://ifconfig.me/ip) || true
 
-# shellcheck disable=SC2034
-while getopts "a:c:e:r:s:t:m:k:p:u:w:d:i:" opt; do
-    case $opt in
-    a) ACTION=$OPTARG ;;
-    c) CONFIGURATION_FILE=$OPTARG ;;
-    e) AZURE_ENVIRONMENT=$OPTARG ;;
-    r) AZURE_REGION=$OPTARG ;;
-    s) AZURE_SUBSCRIPTION_ID=$OPTARG ;;
-    t) AZURE_TENANT_ID=$OPTARG ;;
-    m) AZURE_VM_ADMINUSERNAME=$OPTARG ;;
-    k) AZURE_RESOURCE_PROXY_KIND=$OPTARG ;;
-    p) AZURE_RESOURCE_PROXY_PORT=$OPTARG ;;
-    u) AZURE_RESOURCE_PROXY_USERNAME=$OPTARG ;;
-    w) AZURE_RESOURCE_PROXY_PASSWORD=$OPTARG ;;
-    d) AZURE_RESOURCE_PROXY_DOMAIN_LIST=$OPTARG ;;
-    i) AZURE_RESOURCE_SOURCE_IP_ADDRESS=$OPTARG ;;
-    :)
-        echo "Error: -${OPTARG} requires a value"
-        exit 1
-        ;;
-    *)
-        usage
-        exit 1
-        ;;
-    esac
-done
-
-# Validation
-if [ $# -eq 0 ] || [ -z "${ACTION}" ] || [ -z "$CONFIGURATION_FILE" ]; then
-    echo "Required parameters are missing"
-    usage
-    exit 1
-fi
-if [ "${ACTION}" != "login" ] && [ "${ACTION}" != "install" ] && [ "${ACTION}" != "vminstall" ]  && [ "${ACTION}" != "createconfig" ] && [ "${ACTION}" != "getsuffix" \
-    ] && [ "${ACTION}" != "deploy" ] && [ "${ACTION}" != "undeploy" ] && [ "${ACTION}" != "test" ] && [ "${ACTION}" != "installproxy" ]; then
-    echo "ACTION '${ACTION}' not supported, possible values: login, install, vminstall, getsuffix, createconfig, deploy, test, undeploy"
-    usage
-    exit 1
-fi
-# colors for formatting the output
-# shellcheck disable=SC2034
-YELLOW='\033[1;33m'
-# shellcheck disable=SC2034
-GREEN='\033[1;32m'
-# shellcheck disable=SC2034
-RED='\033[0;31m'
-# shellcheck disable=SC2034
-BLUE='\033[1;34m'
-# shellcheck disable=SC2034
-NC='\033[0m' # No Color
-
-
-if [ "${ACTION}" = "install" ] ; then
-    printMessage "Installing pre-requisites"
-    printProgress "Installing azure cli"
-    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-    az config set extension.use_dynamic_install=yes_without_prompt  2>/dev/null || true
-    sudo apt-get -y update
-    sudo apt-get -y install  jq
-    printMessage "Installing pre-requisites done"
-    exit 0
-fi
-
-if [ "${ACTION}" = "login" ] ; then
-    # if configuration file exists read subscription id and tenant id values in the file
-    if [ "$CONFIGURATION_FILE" ]; then
-        if [ -f "$CONFIGURATION_FILE" ]; then
-            readConfigurationFile "$CONFIGURATION_FILE"
-        fi
-    fi
-    printMessage "Login..."
-    azLogin
-    checkLoginAndSubscription
-    printMessage "Login done"
-    exit 0
-fi
-
-# check if configuration file is set 
-if [ -z "$CONFIGURATION_FILE" ]; then
-    CONFIGURATION_FILE="$SCRIPTS_DIRECTORY/../configuration/.default.env"
-fi
-
-
-
-if [ "${ACTION}" = "installproxy" ] ; then
-  logInfo "--------------------------------------------------"
-  logInfo "GENERAL INFORMATION"
-  logInfo "--------------------------------------------------"
-  logInfo "Current scripts directory: ${SCRIPTS_DIRECTORY}"
-  logInfo "Current user: $(whoami)"
-  logInfo "Current host: $(hostname)"
-  logInfo "Current date: $(date +"%y%m%d-%H%M%S")"
-  logInfo "--------------------------------------------------"
-  if [ "${AZURE_RESOURCE_PROXY_KIND}" = "squidproxy" ]; then
-    printMessage "Installing squid proxy..."
+##############################################################################
+# install squid
+##############################################################################
+installsquidproxy() {
     # Display general information
     # Suppress the "Daemons using outdated libraries" pop-up when using apt to install or update packages
     export NEEDRESTART_SUSPEND=1
@@ -655,6 +612,7 @@ if [ "${ACTION}" = "installproxy" ] ; then
     cmd="sudo service squid stop"
     runCommand "${cmd}" 2>/dev/null
 
+    PUBLIC_IP=$(curl -s ifconfig.me)
     PROXY_IP=$(ifconfig eth0 | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p') # DevSkim: ignore DS162092
     PROXY_BCST=$(ifconfig eth0 | sed -En 's/127.0.0.1//;s/.*broadcast (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p') # DevSkim: ignore DS162092
     PROXY_MASK=$(echo "${PROXY_BCST}" | sed  's/.255/.0/g')/24
@@ -678,7 +636,6 @@ client_request_buffer_max_size 10000 KB
 #################################### ACL ####################################
 
 acl all src all # ACL to authorize all networks (Source = All)  ACL mandaotry
-# acl lan src ${PROXY_MASK} # ACL to authorize backend network  ${PROXY_MASK}
 acl lan src ${AZURE_RESOURCE_SOURCE_IP_ADDRESS}
 acl Safe_ports port 80 # Port HTTP = Port 'sure'
 acl Safe_ports port 443 # Port HTTPS = Port 'sure'
@@ -716,21 +673,33 @@ CONF
 
     logInfo "Proxy Installed"
     logInfo "Client configuration:"
-    logInfo "export HTTP_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    logInfo "export HTTPS_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    logInfo "export http_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    logInfo "export https_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    if [ -n "${PARENT_PROXY_HOST}" ] && [ -n "${PARENT_PROXY_PORT}" ]; then
-        logInfo "export NO_PROXY=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker" # DevSkim: ignore DS162092
-        logInfo "export no_proxy=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker" # DevSkim: ignore DS162092
-    else
-        logInfo "export NO_PROXY=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker,.contoso.com" # DevSkim: ignore DS162092
-        logInfo "export no_proxy=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker,.contoso.com" # DevSkim: ignore DS162092
-    fi
+    logInfo "export HTTP_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export HTTPS_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export http_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export https_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export NO_PROXY=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16" # DevSkim: ignore DS162092
+    logInfo "export no_proxy=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16" # DevSkim: ignore DS162092    
+}
 
-    printMessage "Installing squid proxy done"
-  elif [ "${AZURE_RESOURCE_PROXY_KIND}" = "mitmproxy" ]; then
-    printMessage "Installing mitm proxy..."
+##############################################################################
+# uninstall mitmproxy
+##############################################################################
+uninstallmitmproxy() {
+    logInfo "Updating package list (again - due to net-tools)..."
+    cmd="sudo systemctl stop mitmproxy.service"
+    runCommand "${cmd}" 2>/dev/null    
+    cmd="sudo systemctl disable mitmproxy.service"
+    runCommand "${cmd}" 2>/dev/null    
+    cmd="sudo rm -r /usr/local/bin/mitmproxy/*"
+    runCommand "${cmd}"
+    cmd="sudo rm /etc/systemd/system/mitmproxy.service"
+    runCommand "${cmd}"
+}
+
+##############################################################################
+# install squid
+##############################################################################
+installmitmproxy() {
     # Suppress the "Daemons using outdated libraries" pop-up when using apt to install or update packages
     export NEEDRESTART_SUSPEND=1
     export NEEDRESTART_MODE=l
@@ -775,8 +744,10 @@ CONF
     cmd="sudo systemctl stop mitmproxy.service"
     runCommand "${cmd}" 2>/dev/null
 
-    PROXY_IP=$(ifconfig eth1 | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p') # DevSkim: ignore DS162092
-    PROXY_BCST=$(ifconfig eth1 | sed -En 's/127.0.0.1//;s/.*broadcast (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p') # DevSkim: ignore DS162092
+
+    PUBLIC_IP=$(curl -s ifconfig.me)
+    PROXY_IP=$(ifconfig eth0 | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p') # DevSkim: ignore DS162092
+    PROXY_BCST=$(ifconfig eth0 | sed -En 's/127.0.0.1//;s/.*broadcast (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p') # DevSkim: ignore DS162092
     PROXY_MASK=$(echo "${PROXY_BCST}" | sed  's/.255/.0/g')/24
     HOSTNAME=$(hostname)
 
@@ -899,178 +870,21 @@ def response(flow: http.HTTPFlow) -> None:
     dump(flow,"RESPONSE")
 PYTHON
 
-    cat <<PYTHON | sudo tee /usr/local/bin/mitmproxy/domains_filter_child.py
-from mitmproxy import http, tcp
-from datetime import datetime
-import os
-import shutil
-from datetime import datetime
-from mitmproxy.connection import Server
-from mitmproxy.net.server_spec import ServerSpec
-
-# List of domains to intercept
-DOMAINLIST = [${DOMAIN_LIST}]
-# List of internal domains to access directly
-INTERNAL_DOMAINS = [".corp.contoso.com"]
-
-DUMP_FILE_PREFIX="/var/log/mitmproxy/dump"
-ACCESS_FILE_PREFIX="/var/log/mitmproxy/access"
-FILE_SUFFIX=".log"
-MAXSIZE=1000000
-
-def dump(flow: http.HTTPFlow, label: str) -> None:
-    with open(f"{DUMP_FILE_PREFIX}{FILE_SUFFIX}", "a") as log:
-        dumpproxy = os.getenv('DUMP_PROXY')
-        if dumpproxy == "true":
-            if label == "RESPONSE":
-                if flow.response.content:
-                    log.write(f"{datetime.now()} {label} {flow.request.timestamp_start} {flow.request.method} {flow.request.pretty_url} {flow.response.content.decode('utf-8', errors='replace')}\n")
-                else:
-                    log.write(f"{datetime.now()} {label} {flow.request.timestamp_start} {flow.request.method} {flow.request.pretty_url} \n")
-            else:
-                if flow.request.content:
-                    log.write(f"{datetime.now()} {label} {flow.request.timestamp_start} {flow.request.method} {flow.request.pretty_url} {flow.request.content.decode('utf-8', errors='replace')}\n")
-                else:
-                    log.write(f"{datetime.now()} {label} {flow.request.timestamp_start} {flow.request.method} {flow.request.pretty_url} \n")
-            log.seek(0,os.SEEK_END)
-            size = log.tell()
-            if size > MAXSIZE:
-                datestring = get_current_datetime_string()
-                shutil.copy(f"{DUMP_FILE_PREFIX}{FILE_SUFFIX}",f"{DUMP_FILE_PREFIX}_{datestring}{FILE_SUFFIX}")
-                with open(f"{DUMP_FILE_PREFIX}{FILE_SUFFIX}", "w"):
-                    pass
-
-def logs(flow: http.HTTPFlow, label: str, protocol: str) -> None:
-    with open(f"{ACCESS_FILE_PREFIX}{FILE_SUFFIX}", "a") as log:
-        if protocol == "http":
-            log.write(f"{datetime.now()} {label} {protocol} {flow.request.timestamp_start} {flow.client_conn.peername[0]} {flow.client_conn.peername[1]} {flow.request.method} {flow.request.host} {flow.request.port} {flow.request.url}\n")
-        else:
-            log.write(f"{datetime.now()} {label} tcp {flow.client_conn.timestamp_start} {flow.client_conn.peername[0]} {flow.client_conn.peername[1]}  {protocol.replace("tcp","")} {flow.server_conn.address[0]} {flow.server_conn.address[1]}  \n")
-        log.seek(0,os.SEEK_END)
-        size = log.tell()
-        if size > MAXSIZE:
-            datestring = get_current_datetime_string()
-            shutil.copy(f"{ACCESS_FILE_PREFIX}{FILE_SUFFIX}",f"{ACCESS_FILE_PREFIX}_{datestring}{FILE_SUFFIX}")
-            with open(f"{ACCESS_FILE_PREFIX}{FILE_SUFFIX}", "w"):
-                pass
-
-# def tcp_message(flow: tcp.TCPFlow) -> None:
-#     logs(flow,"IGNORED","tcpDATA")
-
-def tcp_start(flow: tcp.TCPFlow) -> None:
-    logs(flow,"IGNORED","tcpCONN")
-
-def tcp_end(flow: tcp.TCPFlow) -> None:
-    logs(flow,"IGNORED","tcpDISC")
-
-
-def request(flow: http.HTTPFlow) -> None:
-    # Check if the request host is in the whitelist
-    dump(flow,"REQUEST ")
-    if not any(domain in flow.request.host for domain in DOMAINLIST):
-        flow.response = http.Response.make(
-            403,  # HTTP status code
-            b"Blocked by mitmproxy",  # Response body
-            {"Content-Type": "text/plain"}  # Headers
-        )
-        logs(flow,"DENIED   ","http")
-    else:        
-        if any(domain in flow.request.host for domain in INTERNAL_DOMAINS):
-            # Directly access internal sites
-            new_server = Server(address=flow.server_conn.address)
-            new_server.via = None
-            flow.server_conn = new_server 
-            logs(flow,"ACCEPTED ","http")
-        else:
-            # Forward other requests to the parent proxy
-            proxy = ("${PARENT_PROXY_HOST}", ${PARENT_PROXY_PORT})
-            new_server = Server(address=flow.server_conn.address)
-            new_server.via = ServerSpec(("http", proxy))
-            flow.server_conn = new_server            
-            logs(flow,"FORWARDED","http")
-
-def response(flow: http.HTTPFlow) -> None:
-    # Check if the request host is in the whitelist
-    dump(flow,"RESPONSE")
-PYTHON
-
-    cat <<PYTHON | sudo tee /usr/local/bin/mitmproxy/websocket_domains_filter.py
-from mitmproxy import http, websocket
-
-def websocket_message(flow: websocket.WebSocketFlow):
-    # This function is called whenever a WebSocket message is received.
-    if not any(domain in flow.request.host for domain in DOMAINLIST):
-        flow.response = http.Response.make(
-            403,  # HTTP status code
-            b"Blocked by mitmproxy",  # Response body
-            {"Content-Type": "text/plain"}  # Headers
-        )
-PYTHON
-
     CERT_FOLDER="$(mktemp -d)"
     logInfo "Creating mitmproxy-ca.pem under /usr/local/bin/mitmproxy/cert"
-    echo "${CERTIFICATE_AUTHORITY_KEY}" | sudo tee "${CERT_FOLDER}/proxy-ca.key"
-    echo "${CERTIFICATE_AUTHORITY}" | sudo tee "${CERT_FOLDER}/proxy-ca.crt"
+    echo "${AZURE_RESOURCE_PROXY_CA_KEY}" | sudo tee "${CERT_FOLDER}/proxy-ca.key"
+    echo "${AZURE_RESOURCE_PROXY_CA}" | sudo tee "${CERT_FOLDER}/proxy-ca.crt"
     rm /usr/local/bin/mitmproxy/cert/* 2>/dev/null
     cat "${CERT_FOLDER}/proxy-ca.key" "${CERT_FOLDER}/proxy-ca.crt" > /usr/local/bin/mitmproxy/cert/mitmproxy-ca.pem
 
-    IGNORE_HOST_LIST=" --ignore-hosts mcr.microsoft.com:443 \
-   --ignore-hosts registry-1.docker.io:443 \
-   --ignore-hosts auth.docker.io:443 \
-   --ignore-hosts  production.cloudflare.docker.com:443 \
-   --ignore-hosts  gbl.his.arc.azure.com:443 \
-   --ignore-hosts  .his.arc.azure.com:443 \
-   --ignore-hosts  .login.microsoft.com:443 \
-   --ignore-hosts  .dp.kubernetesconfiguration.azure.com:443 \
-   --ignore-hosts  crinfrastratodevpublic.azurecr.io:443 \
-   --ignore-hosts  login.microsoftonline.com:443 \
-   --ignore-hosts  sts.windows.net:443 \
-   --ignore-hosts  wusmanaged4.blob.core.windows.net:443 \
-   --ignore-hosts  open-telemetry.github.io:443 \
-   --ignore-hosts  linuxgeneva-microsoft.azurecr.io:443 \
-   --ignore-hosts  dc.services.visualstudio.com:443 \
-   --ignore-hosts  .blob.core.windows.net:443 \
-   --ignore-hosts  login.windows.net:443 \
-   --ignore-hosts  global.handler.control.monitor.azure.com:443 \
-   --ignore-hosts  .oms.opinsights.azure.com:443 \
-   --ignore-hosts  .monitoring.azure.com:443 \
-   --ignore-hosts  github.com:443 \
-   --ignore-hosts  management.azure.com:443 \
-   --ignore-hosts  .ods.opinsights.azure.com:443 \
-   --ignore-hosts  objects.githubusercontent.com:443 \
-   --ignore-hosts  .azurecr.io:443 \
-   --ignore-hosts  dev.azure.com:443 \
-   --ignore-hosts  .cloudflarestorage.com:443 \
-   --ignore-hosts  registry.k8s.io:443 \
-   --ignore-hosts  kubernetes.github.io:443 \
-   --ignore-hosts  .pkg.dev:443 \
-   --ignore-hosts  packages.microsoft.com:443 \
-   --ignore-hosts  pypi.org:443 \
-   --ignore-hosts  files.pythonhosted.org:443 \
-   --ignore-hosts  .handler.control.monitor.azure.com:443 \
-   --ignore-hosts  aio-broker.corp.contoso.com:443 \
-   --ignore-hosts  .amazonaws.com:443 \
-   --ignore-hosts  kyverno.github.io:443 \
-   --ignore-hosts  ghcr.io:443 \
-   --ignore-hosts  pkg-containers.githubusercontent.com:443 \
-   --ignore-hosts  .metrics.ingest.monitor.azure.com:443 \
-   --ignore-hosts  gcs.prod.monitoring.core.windows.net:443 \
-   --ignore-hosts  prometheus-community.github.io:443 \
-   --ignore-hosts  raw.githubusercontent.com:443 "
+    IGNORE_HOST_LIST=" --ignore-hosts  raw.githubusercontent.com:443 "
 
-    if [ -n "${PARENT_PROXY_HOST}" ] && [ -n "${PARENT_PROXY_PORT}" ]; then
-    # DevSkim: ignore DS440001
-        cat <<BASH | sudo tee /usr/local/bin/mitmproxy/mitmproxy.sh # DevSkim: ignore DS440001
+
+    cat <<BASH | sudo tee /usr/local/bin/mitmproxy/mitmproxy.sh  # DevSkim: ignore DS440001
 #!/bin/bash
-/usr/local/bin/mitmproxy/mitmdump --showhost -p ${AZURE_RESOURCE_PROXY_PORT} --set confdir=/usr/local/bin/mitmproxy/cert   --proxyauth  @/usr/local/bin/mitmproxy/passwd --ssl-insecure --mode upstream:http://${PARENT_PROXY_HOST}:${PARENT_PROXY_PORT} --upstream-auth ${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD} ${IGNORE_HOST_LIST} --set tls_version_client_min=TLS1_2 --show-ignored-hosts -s /usr/local/bin/mitmproxy/domains_filter_child.py &>> /var/log/mitmproxy/mitmproxy.log # DevSkim: ignore DS440001
+/usr/local/bin/mitmproxy/mitmdump --mode regular  --set block_global=false --showhost -p ${AZURE_RESOURCE_PROXY_PORT} --set confdir=/usr/local/bin/mitmproxy/cert   --proxyauth  @/usr/local/bin/mitmproxy/passwd ${IGNORE_HOST_LIST} --set tls_version_client_min=TLS1_2 --show-ignored-hosts -s /usr/local/bin/mitmproxy/domains_filter_parent.py &>> /var/log/mitmproxy/mitmproxy.log # DevSkim: ignore DS440001
 BASH
-        checkError
-    else
-        cat <<BASH | sudo tee /usr/local/bin/mitmproxy/mitmproxy.sh  # DevSkim: ignore DS440001
-#!/bin/bash
-/usr/local/bin/mitmproxy/mitmdump --mode regular --showhost -p ${AZURE_RESOURCE_PROXY_PORT} --set confdir=/usr/local/bin/mitmproxy/cert   --proxyauth  @/usr/local/bin/mitmproxy/passwd ${IGNORE_HOST_LIST} --set tls_version_client_min=TLS1_2 --show-ignored-hosts -s /usr/local/bin/mitmproxy/domains_filter_parent.py &>> /var/log/mitmproxy/mitmproxy.log # DevSkim: ignore DS440001
-BASH
-    fi
+    checkError
 
     sudo chmod +x /usr/local/bin/mitmproxy/mitmproxy.sh
     checkError
@@ -1100,6 +914,15 @@ SERVICE
     checkError
 
 
+    sudo touch /var/log/mitmproxy/sslkeylogfile.txt
+    sudo chown "${CURRENT_USER}" /var/log/mitmproxy/sslkeylogfile.txt
+    sudo touch /var/log/mitmproxy/dump.log
+    sudo chown "${CURRENT_USER}" /var/log/mitmproxy/dump.log
+    sudo touch /var/log/mitmproxy/access.log
+    sudo chown "${CURRENT_USER}" /var/log/mitmproxy/access.log
+    sudo touch /var/log/mitmproxy/mitmproxy.log
+    sudo chown "${CURRENT_USER}" /var/log/mitmproxy/mitmproxy.log
+
     sudo systemctl daemon-reload
     checkError
     sudo systemctl enable mitmproxy.service
@@ -1110,19 +933,190 @@ SERVICE
 
     logInfo "Proxy Installed"
     logInfo "Client configuration:"
-    logInfo "export HTTP_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    logInfo "export HTTPS_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    logInfo "export http_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    logInfo "export https_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PROXY_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
-    if [ -n "${PARENT_PROXY_HOST}" ] && [ -n "${PARENT_PROXY_PORT}" ]; then
-        logInfo "export NO_PROXY=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker" # DevSkim: ignore DS162092
-        logInfo "export no_proxy=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker" # DevSkim: ignore DS162092
-    else
-        logInfo "export NO_PROXY=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker,.contoso.com" # DevSkim: ignore DS162092
-        logInfo "export no_proxy=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,,logcollector,${PROXY_MASK}/24,10.43.0.0/16,aio-broker,.contoso.com" # DevSkim: ignore DS162092
-    fi
+    logInfo "export HTTP_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export HTTPS_PROXY=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export http_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export https_proxy=http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${PUBLIC_IP}:${AZURE_RESOURCE_PROXY_PORT}" # DevSkim: ignore DS137138, DS162092
+    logInfo "export NO_PROXY=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16" # DevSkim: ignore DS162092
+    logInfo "export no_proxy=localhost,127.0.0.1,.svc,.svc.cluster.local,172.16.0.0/12,192.168.0.0/16,169.254.169.254,logcollector,${PROXY_MASK}/24,10.43.0.0/16" # DevSkim: ignore DS162092
+}
 
-    printMessage "Installing mitm proxy done"
+#######################################################
+#- used to print out script usage
+#######################################################
+usage() {
+    echo
+    echo "Arguments:"
+    printf " -a  Sets proxy-global-tool ACTION {login, install, getsuffix, createconfig, deploy, test, undeploy}\n"
+    printf " -c  Sets the proxy-global-tool configuration file\n"
+    printf " -e  Sets the environement - by default 'dev' ('dev', 'tst', 'prd', 'val')\n"
+    printf " -r  Sets the Azure Region - by default 'eastus2' (For instance: 'westus2', 'westeurope', 'northeurope',...)\n"
+    printf " -s  Sets subscription id \n"
+    printf " -t  Sets tenant id\n"
+    printf " -k  Sets proxy type: 'squidproxy' or 'mitmproxy'\n"
+    printf " -p  Sets proxy port: '8008'\n"
+    printf " -u  Sets proxy username: 'azureuser'\n"
+    printf " -w  Sets proxy password: 'password'\n"
+    printf " -d  Sets proxy domains list: '.bing.com;.microsoft.com'\n"
+
+
+    echo
+    echo "Example:"
+    printf " bash ./scripts/proxy-global-tool.sh -a install \n"
+    printf " bash ./scripts/proxy-global-tool.sh -a createconfig -c ./configuration/proxytool.env -e dev -r eastus2 \n" 
+    printf " bash ./scripts/proxy-global-tool.sh -a deploy -k squidproxy -c ./configuration/proxytool.env \n"
+    printf " bash ./scripts/proxy-global-tool.sh -a deploy -k mitmproxy -c ./configuration/proxytool.env \n"
+    printf " bash ./scripts/proxy-global-tool.sh -a deploy -k squidproxy -c ./configuration/proxytool.env -p 8080 -u azureuser -w au -d 'ifconfig.me;.bing.com;.microsoft.com' \n"    
+    printf " bash ./scripts/proxy-global-tool.sh -a test -c ./configuration/proxytool.env\n" 
+    printf " bash ./scripts/proxy-global-tool.sh -a undeploy -c ./configuration/proxytool.env\n" 
+}
+NULL="null"
+AZURE_ENVIRONMENT=dev
+ACTION=
+CONFIGURATION_FILE="$SCRIPTS_DIRECTORY/../configuration/.default.env"
+AZURE_RESOURCE_PREFIX="prx"
+AZURE_SUBSCRIPTION_ID=""
+AZURE_TENANT_ID=""   
+AZURE_REGION="eastus2"
+SSH_PUBLIC_KEY=""
+SSH_PRIVATE_KEY=""
+AZURE_VM_ADMINUSERNAME="azureuser"
+AZURE_RESOURCE_PROXY_KIND="squidproxy"
+AZURE_RESOURCE_PROXY_PORT="8080"
+AZURE_RESOURCE_PROXY_USERNAME="azureuser"
+AZURE_RESOURCE_PROXY_PASSWORD="au"
+AZURE_RESOURCE_PROXY_DOMAIN_LIST="ifconfig.me;www.bing.com;www.bing.dk"
+AZURE_RESOURCE_PROXY_CA_KEY="${NULL}"
+AZURE_RESOURCE_PROXY_CA="${NULL}"
+AZURE_RESOURCE_SOURCE_IP_ADDRESS=$(curl -s http://ifconfig.me/ip) || true
+
+# shellcheck disable=SC2034
+while getopts "a:c:e:r:s:t:m:k:p:u:w:d:i:y:f:?h" opt; do
+    case $opt in
+    a) ACTION=$OPTARG ;;
+    c) CONFIGURATION_FILE=$OPTARG ;;
+    e) AZURE_ENVIRONMENT=$OPTARG ;;
+    r) AZURE_REGION=$OPTARG ;;
+    s) AZURE_SUBSCRIPTION_ID=$OPTARG ;;
+    t) AZURE_TENANT_ID=$OPTARG ;;
+    m) AZURE_VM_ADMINUSERNAME=$OPTARG ;;
+    k) AZURE_RESOURCE_PROXY_KIND=$OPTARG ;;
+    p) AZURE_RESOURCE_PROXY_PORT=$OPTARG ;;
+    u) AZURE_RESOURCE_PROXY_USERNAME=$OPTARG ;;
+    w) AZURE_RESOURCE_PROXY_PASSWORD=$OPTARG ;;
+    d) AZURE_RESOURCE_PROXY_DOMAIN_LIST=$OPTARG ;;
+    i) AZURE_RESOURCE_SOURCE_IP_ADDRESS=$OPTARG ;;
+    y) AZURE_RESOURCE_PROXY_CA_KEY=$OPTARG ;;
+    f) AZURE_RESOURCE_PROXY_CA=$OPTARG ;;    
+    :)
+        echo "Error: -${OPTARG} requires a value"
+        exit 1
+        ;;
+    \?)
+        usage
+        exit 1
+        ;;
+    h)
+        usage
+        exit 1
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+    esac
+done
+
+# Validation
+if [ $# -eq 0 ] || [ -z "${ACTION}" ] || [ -z "$CONFIGURATION_FILE" ]; then
+    echo "Required parameters are missing"
+    usage
+    exit 1
+fi
+if [ "${ACTION}" != "login" ] && [ "${ACTION}" != "install" ] && [ "${ACTION}" != "vminstall" ]  && [ "${ACTION}" != "createconfig" ] && [ "${ACTION}" != "getsuffix" \
+    ] && [ "${ACTION}" != "deploy" ] && [ "${ACTION}" != "undeploy" ] && [ "${ACTION}" != "test" ] && [ "${ACTION}" != "installproxy" ]; then
+    echo "ACTION '${ACTION}' not supported, possible values: login, install, vminstall, getsuffix, createconfig, deploy, test, undeploy"
+    usage
+    exit 1
+fi
+# colors for formatting the output
+# shellcheck disable=SC2034
+YELLOW='\033[1;33m'
+# shellcheck disable=SC2034
+GREEN='\033[1;32m'
+# shellcheck disable=SC2034
+RED='\033[0;31m'
+# shellcheck disable=SC2034
+BLUE='\033[1;34m'
+# shellcheck disable=SC2034
+NC='\033[0m' # No Color
+
+
+if [ "${ACTION}" = "install" ] ; then
+    printMessage "Installing pre-requisites"
+    printProgress "Installing azure cli"
+    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+    az config set extension.use_dynamic_install=yes_without_prompt  2>/dev/null || true
+    cmd="sudo apt-get -y update"
+    runCommand "${cmd}" "true"    
+    cmd="sudo apt-get -y install  jq"
+    runCommand "${cmd}" "true"    
+    cmd="sudo apt-get install net-tools -y"
+    runCommand "${cmd}" "true"    
+    cmd="sudo apt-get install dnsutils -y"
+    runCommand "${cmd}" "true"    
+    printMessage "Installing pre-requisites done"
+    exit 0
+fi
+
+if [ "${ACTION}" = "login" ] ; then
+    # if configuration file exists read subscription id and tenant id values in the file
+    if [ "$CONFIGURATION_FILE" ]; then
+        if [ -f "$CONFIGURATION_FILE" ]; then
+            readConfigurationFile "$CONFIGURATION_FILE"
+        fi
+    fi
+    printMessage "Login..."
+    azLogin
+    checkLoginAndSubscription
+    printMessage "Login done"
+    exit 0
+fi
+
+# check if configuration file is set 
+if [ -z "$CONFIGURATION_FILE" ]; then
+    CONFIGURATION_FILE="$SCRIPTS_DIRECTORY/../configuration/.default.env"
+fi
+
+
+
+if [ "${ACTION}" = "installproxy" ] ; then
+  logInfo "--------------------------------------------------"
+  logInfo "GENERAL INFORMATION"
+  logInfo "--------------------------------------------------"
+  logInfo "Current scripts directory: ${SCRIPTS_DIRECTORY}"
+  logInfo "Current user: $(whoami)"
+  logInfo "Current host: $(hostname)"
+  logInfo "Current date: $(date +"%y%m%d-%H%M%S")"
+  logInfo "--------------------------------------------------"
+  if [ -f /etc/squid/squid.conf ]; then
+    printMessage "Uninstalling squid proxy..."
+    uninstallsquidproxy
+    printMessage "Uninstalling squid proxy done"
+  fi
+  if [ -f /etc/systemd/system/mitmproxy.service ]; then
+    printMessage "Uninstalling squid proxy..."
+    uninstallmitmproxy
+    printMessage "Uninstalling squid proxy..."
+  fi
+  if [ "${AZURE_RESOURCE_PROXY_KIND}" = "squidproxy" ]; then
+    printMessage "Installing squid proxy..."
+    installsquidproxy
+    printMessage "Installing squid proxy done"
+  elif [ "${AZURE_RESOURCE_PROXY_KIND}" = "mitmproxy" ]; then
+    printMessage "Installing mitmproxy..."
+    installmitmproxy
+    printMessage "Installing mitmproxy done"
   fi
   exit 0
 fi
@@ -1175,17 +1169,22 @@ if [ "${ACTION}" = "getsuffix" ] ; then
     exit 0
 fi
 
-if [ "$CONFIGURATION_FILE" ]; then
-    if [ ! -f "$CONFIGURATION_FILE" ]; then
-        printError "$CONFIGURATION_FILE does not exist."
-        exit 1
-    fi
-    readConfigurationFile "$CONFIGURATION_FILE"
-else
-    printWarning "No env. file specified. Using environment variables."
-fi
-
 if [ "${ACTION}" = "deploy" ] ; then
+  if [ "$CONFIGURATION_FILE" ]; then
+      if [ ! -f "$CONFIGURATION_FILE" ]; then
+         printError "$CONFIGURATION_FILE does not exist."
+         exit 1
+      fi
+      printMessage "Updating configuration file: ${CONFIGURATION_FILE} with proxy parameters..."
+      updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_KIND" "${AZURE_RESOURCE_PROXY_KIND}"
+      updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_PORT" "${AZURE_RESOURCE_PROXY_PORT}"
+      updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_USERNAME" "${AZURE_RESOURCE_PROXY_USERNAME}"
+      updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_PASSWORD" "${AZURE_RESOURCE_PROXY_PASSWORD}"
+      updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_DOMAIN_LIST" "\"${AZURE_RESOURCE_PROXY_DOMAIN_LIST}\""
+      readConfigurationFile "$CONFIGURATION_FILE"
+  else
+      printWarning "No env. file specified. Using environment variables."
+  fi
   printMessage "Deploying the infrastructure using configuration file: ${CONFIGURATION_FILE}..."
   # Check Azure connection
   printProgress "Check Azure connection for subscription: '$AZURE_SUBSCRIPTION_ID'"
@@ -1222,6 +1221,91 @@ if [ "${ACTION}" = "deploy" ] ; then
       runCommand "$cmd" "true" 1>/dev/null
   fi
 
+  if [ "${AZURE_RESOURCE_PROXY_KIND}" = "mitmproxy" ]; then
+    PROXY_FOLDER="$(mktemp -d)"
+    logProgress "Creating Proxy certificate authority under ${PROXY_FOLDER}..."
+    DNS_NAME="pip${AZURE_PROXY_SUFFIX}proxy.${AZURE_REGION}.cloudapp.azure.com"
+    DNS_PARENT_NAME="${AZURE_REGION}.cloudapp.azure.com"
+
+    cat <<CFG > "${PROXY_FOLDER}/openssl.config"
+[ ca ]
+default_ca = CA_default
+
+[ CA_default ]
+dir               = ${PROXY_FOLDER}
+certs             = \$dir/certs
+new_certs_dir     = \$dir/newcerts
+database          = \$dir/index.txt
+serial            = \$dir/serial
+RANDFILE          = \$dir/private/.rand
+private_key       = \$dir/private/cakey.pem
+certificate       = \$dir/cacert.pem
+default_md        = sha256
+policy            = policy_any
+
+[ policy_any ]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = optional
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+[ req ]
+default_bits       = 2048
+default_md         = sha256
+default_keyfile    = privkey.pem
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+x509_extensions    = v3_req
+	
+[ req_distinguished_name ]
+countryName                     = DK
+countryName_default             = US
+stateOrProvinceName             = DK
+stateOrProvinceName_default     = California
+localityName                    = San Francisco
+localityName_default            = San Francisco
+0.organizationName              = Contoso
+0.organizationName_default      = My Company
+organizationalUnitName          = IT
+commonName                      = ${DNS_PARENT_NAME}
+commonName_max                  = 64
+emailAddress                    = admin@${DNS_PARENT_NAME}
+emailAddress_max                = 64
+
+[ v3_req ]
+subjectAltName      = @alt_names
+keyUsage            = critical, keyCertSign, nonRepudiation, digitalSignature, keyEncipherment
+[ alt_names ]
+DNS.1 = ${DNS_NAME}
+CFG
+    mkdir -p "${PROXY_FOLDER}/certs"
+    mkdir -p "${PROXY_FOLDER}/newcerts"
+    mkdir -p "${PROXY_FOLDER}/private"
+    touch "${PROXY_FOLDER}/index.txt"
+    echo 1000 > "${PROXY_FOLDER}/serial"
+
+    logInfo "Creating Proxy certificate authority key..."
+    openssl genpkey -algorithm RSA -out "${PROXY_FOLDER}/private/cakey.pem" -pkeyopt rsa_keygen_bits:2048
+    logInfo "Creating Proxy certificate authority..."
+    openssl req  -config "${PROXY_FOLDER}/openssl.config" -x509 -new -nodes -key "${PROXY_FOLDER}/private/cakey.pem" -days 3650  \
+        -sha256 -out "${PROXY_FOLDER}/cacert.pem" -addext keyUsage=critical,keyCertSign \
+        -subj "/C=DK/ST=DK/L=Copenhagen/O=Contoso/OU=IT/CN=contoso.com"
+    logInfo "Checking Proxy certificate authority..."
+    openssl x509 -noout -text -in "${PROXY_FOLDER}/cacert.pem"
+    PROXY_CA_KEY=$(cat "${PROXY_FOLDER}/private/cakey.pem")
+    PROXY_CA_CERTIFICATE=$(cat "${PROXY_FOLDER}/cacert.pem")  
+    logProgress "Proxy certificate authority created"
+  else
+    PROXY_CA_KEY="${NULL}"
+    PROXY_CA_CERTIFICATE="${NULL}"  
+  fi
+  updateConfigurationFile "${CONFIGURATION_FILE}" "PROXY_CERTIFICATE_AUTHORITY_KEY" "\"${PROXY_CA_KEY}\""
+  updateConfigurationFile "${CONFIGURATION_FILE}" "PROXY_CERTIFICATE_AUTHORITY" "\"${PROXY_CA_CERTIFICATE}\""  
+
+
   printProgress "Get IP address"
   AGENT_IP_ADDRESS=$(curl -s https://ifconfig.me/ip) || true
 
@@ -1236,7 +1320,7 @@ cat << '${EOFILE}' > ./proxy-global-tool.sh
 $(cat ./scripts/proxy-global-tool.sh)
 ${EOFILE}
 chmod 0755 ./proxy-global-tool.sh
-./proxy-global-tool.sh -a installproxy -k ${AZURE_RESOURCE_PROXY_KIND} -p ${AZURE_RESOURCE_PROXY_PORT} -u ${AZURE_RESOURCE_PROXY_USERNAME} -w ${AZURE_RESOURCE_PROXY_PASSWORD} -d "${AZURE_RESOURCE_PROXY_DOMAIN_LIST}" -i ${AZURE_RESOURCE_SOURCE_IP_ADDRESS} 
+./proxy-global-tool.sh -a installproxy -k ${AZURE_RESOURCE_PROXY_KIND} -p ${AZURE_RESOURCE_PROXY_PORT} -u ${AZURE_RESOURCE_PROXY_USERNAME} -w ${AZURE_RESOURCE_PROXY_PASSWORD} -d "${AZURE_RESOURCE_PROXY_DOMAIN_LIST}" -i ${AZURE_RESOURCE_SOURCE_IP_ADDRESS} -y "${PROXY_CA_KEY}" -f "${PROXY_CA_CERTIFICATE}"
 ${EOFMAIN}
   
   # echo "$TEMPDIR/script.sh"
@@ -1268,12 +1352,11 @@ ${EOFMAIN}
   printProgress "Updating configuration in file '${CONFIGURATION_FILE}'" 
   
   updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_KIND" "${AZURE_RESOURCE_PROXY_KIND}"
-  updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_IP_ADDRESS" "${AZURE_RESOURCE_PROXY_IP_ADDRESS}"
-  updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_DNS_NAME" "${AZURE_RESOURCE_PROXY_DNS_NAME}"
   updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_PORT" "${AZURE_RESOURCE_PROXY_PORT}"
+  updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_DNS_NAME" "${AZURE_RESOURCE_PROXY_DNS_NAME}"
   updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_USERNAME" "${AZURE_RESOURCE_PROXY_USERNAME}"
   updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_PASSWORD" "${AZURE_RESOURCE_PROXY_PASSWORD}"
-  updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_DOMAIN_LIST" "${AZURE_RESOURCE_PROXY_DOMAIN_LIST}"
+  updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_PROXY_DOMAIN_LIST" "\"${AZURE_RESOURCE_PROXY_DOMAIN_LIST}\""
   AZURE_RESOURCE_HTTP_PROXY="http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${AZURE_RESOURCE_PROXY_DNS_NAME}:${AZURE_RESOURCE_PROXY_PORT}/"
   AZURE_RESOURCE_HTTPS_PROXY="http://${AZURE_RESOURCE_PROXY_USERNAME}:${AZURE_RESOURCE_PROXY_PASSWORD}@${AZURE_RESOURCE_PROXY_DNS_NAME}:${AZURE_RESOURCE_PROXY_PORT}/"
   updateConfigurationFile "${CONFIGURATION_FILE}" "AZURE_RESOURCE_HTTP_PROXY" "${AZURE_RESOURCE_HTTP_PROXY}"
@@ -1285,6 +1368,16 @@ fi
 
 
 if [ "${ACTION}"  =  "undeploy" ] ; then
+    if [ "$CONFIGURATION_FILE" ]; then
+        if [ ! -f "$CONFIGURATION_FILE" ]; then
+            printError "$CONFIGURATION_FILE does not exist."
+            exit 1
+        fi
+        readConfigurationFile "$CONFIGURATION_FILE"
+    else
+        printWarning "No env. file specified. Using environment variables."
+    fi
+
     printMessage "Undeploying the infrastructure..."
     # Check Azure connection
     printProgress "Check Azure connection for subscription: '$AZURE_SUBSCRIPTION_ID'"
@@ -1322,6 +1415,33 @@ if [ "${ACTION}"  =  "test" ] ; then
     printMessage "Testing proxy..."
     azLogin
     checkError    
+    printWarning "Please, ensure the proxy is configured to accept website 'ifconfig.me'"
+    readConfigurationFile "${CONFIGURATION_FILE}"    
+    LOCAL_IP=$(curl -s ifconfig.me)
+    printMessage "Local IP Address: ${LOCAL_IP}"
+    PROXY_FOLDER="$(mktemp -d)"
+    if [ "${PROXY_CERTIFICATE_AUTHORITY}" = "${NULL}" ];then
+        CERT_OPTION=""
+    else
+        echo "${PROXY_CERTIFICATE_AUTHORITY}" > "${PROXY_FOLDER}/ca.crt"
+        CERT_OPTION="--cacert ${PROXY_FOLDER}/ca.crt"
+    fi
+    cmd="curl -s ${CERT_OPTION} --proxy ${AZURE_RESOURCE_HTTP_PROXY} http://ifconfig.me"
+    PROXY_IP=$(eval "${cmd}")
+    printMessage "Proxy IP Address from  http://ifconfig.me: ${PROXY_IP}"
+    printMessage "With command: curl -s ${CERT_OPTION} --proxy ${AZURE_RESOURCE_HTTP_PROXY} http://ifconfig.me"    
+    cmd="curl -s ${CERT_OPTION} --proxy ${AZURE_RESOURCE_HTTP_PROXY} https://ifconfig.me"
+    PROXY_SSL_IP=$(eval "${cmd}")
+    printMessage "Proxy IP Address from  https://ifconfig.me: ${PROXY_SSL_IP}"
+    printMessage "With command: curl -s ${CERT_OPTION} --proxy ${AZURE_RESOURCE_HTTP_PROXY} https://ifconfig.me"
+    PROXY_DNS_IP=$(dig +short  "${AZURE_RESOURCE_PROXY_DNS_NAME}")
+    printMessage "Proxy IP Address associated with DNS name ${AZURE_RESOURCE_PROXY_DNS_NAME}: ${PROXY_DNS_IP}"
+    if [ "${PROXY_DNS_IP}" = "${PROXY_IP}" ] && [ "${PROXY_DNS_IP}" = "${PROXY_SSL_IP}" ]; then
+        printMessage "Test successful"
+    else
+        printError "Test failed: Proxy IP Address different from Proxy IP Address associated with DNS name "
+    fi
+    # rm -f -r "${PROXY_FOLDER}"
     printMessage "Testing proxy done"
     exit 0
 fi
