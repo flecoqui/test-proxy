@@ -3,9 +3,13 @@
 ## Introduction
 
 This repository contains the documentations and the code to deploy either a Squid proxy (https://www.squid-cache.org/) and or mitmproxy (https://mitmproxy.org/) in your Azure Subscription.
-This repository is useful if you need to deploy services and applications in Azure behind a proxy. You could test this deployment using proxies deployed from this repository. Moreover, from a security perspective, those proxies could be used to capture all the endpoints used by your applications or services in checking the proxy log file 'access.log'.
+If you need to deploy services and applications in Azure behind a proxy. You could test this deployment using proxies deployed from this repository. Moreover, from a security perspective, those proxies could be used to capture all the endpoints used by your applications or services in checking the proxy log file 'access.log'.
 
-At least, with mitmproxy, it's also possible to capture the SSL traffic using deep packet inspection.
+By default, with the Squid proxy is configured and deployed to support end-to-end SSL handshake. With this configuration the client applications will accept the connection to the services through the proxy as it's an end-to-end SSL handshake.  
+![Windows](./docs/README/squidproxy-small.png)
+
+At least, with mitmproxy, it's possible to decrypt the SSL traffic. In that case, the SSL handshake occurs between the mitmproxy and the services.   
+![Windows](./docs/README/mitmproxy-small.png)
 
 This document contains the following chapters:
 
@@ -306,6 +310,12 @@ Then restart the proxy with the following command line:
 ```bash
     azureuser@proxyprxdevXXXX:~$ sudo systemctl restart mitmproxy.service
 ```
+
+Moreover, if you use Wireshark, you can get the SSL keys used by mitmproxy to encrypt the traffic from the file:   
+/var/log/mitmproxy/sslkeylogfile.txt
+
+Further information [here](https://docs.mitmproxy.org/stable/howto-wireshark-tls/)
+
 
 ### Using logs with squidproxy
 
