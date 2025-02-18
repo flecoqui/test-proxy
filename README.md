@@ -84,9 +84,8 @@ You need to install the following pre-requisite on your machine.
 
 1. Launch Visual Studio Code in the folder where you cloned the repository.
 
-    ```bash
-        ~/projects/NNMicrosoftEngagement_V2$ code .
-    ```
+
+    ~/projects/NNMicrosoftEngagement_V2$ ```code .```
 
 2. Once Visual Studio Code is launched, you should see the following dialog box:
 
@@ -97,10 +96,6 @@ You need to install the following pre-requisite on your machine.
 5. Once the container is loaded, you can open a new terminal (Terminal -> New Terminal).
 6. From the terminal, you have access to the tools installed in the Dev Container, such as the `az` client.
 
-    ```bash
-        vscode ➜ /workspaces/test-proxy (main) $ az login
-    ```
-
     vscode ➜ /workspaces/test-proxy (main) $ ```az login```
 
 
@@ -108,16 +103,13 @@ You need to install the following pre-requisite on your machine.
 
 1. Before deploying the infrastructure, you need first to get a connection with your Microsoft Entra ID Tenant and Azure Subscription from the Dev Container terminal runninng the following comamnds.  
 
-    ```bash
-        vscode ➜ /workspaces/test-proxy (main) $ az login -t [TENANT-ID]
-        vscode ➜ /workspaces/test-proxy (main) $ az account set --subscription [SUSCRIPTION-ID]
-    ```
+    vscode ➜ /workspaces/test-proxy (main) $ ```az login -t [TENANT-ID]```
+    vscode ➜ /workspaces/test-proxy (main) $ ```az account set --subscription [SUSCRIPTION-ID]```
+
 
 2. You can now create the configuration file to deploy your infrastructure.  
 
-    ```bash
-        vscode ➜ /workspaces/test-proxy (main) $ ./scripts/proxy-global-tool.sh -a createconfig -c ./configuration/test.env  -r [AZURE-REGION]
-    ```
+    vscode ➜ /workspaces/test-proxy (main) $ ```./scripts/proxy-global-tool.sh -a createconfig -c ./configuration/test.env  -r [AZURE-REGION]```
 
     Where AZURE-REGION is the Azure region where you want to deploy the proxy.
     The script file './scripts/proxy-global-tool.sh' creates the envrionment file './configuration/test.env' which contains all the deployment parameters. The variable 'AZURE_PROXY_SUFFIX' contains the string which be used to name the resource group, virtual machine, ...
@@ -132,15 +124,13 @@ You need to install the following pre-requisite on your machine.
 
    With the command line below, Squid proxy will be deployed.
 
-    ```bash
-        vscode ➜ /workspaces/test-proxy (main) $ ./scripts/proxy-global-tool.sh -a deploy -k squidproxy -c ./configuration/test.env -p 8080 -u azureuser -w au -d 'ifconfig.me;.bing.com;.microsoft.com'
-    ```
+
+    vscode ➜ /workspaces/test-proxy (main) $ ```./scripts/proxy-global-tool.sh -a deploy -k squidproxy -c ./configuration/test.env -p 8080 -u azureuser -w au -d 'ifconfig.me;.bing.com;.microsoft.com'```
+
 
    With the command line below, mitmproxy will be deployed. This proxy requires the creation of a Certificate Authority which will be used for the client authentication with the proxy.
 
-    ```bash
-        vscode ➜ /workspaces/test-proxy (main) $ ./scripts/proxy-global-tool.sh -a deploy -k mitmproxy -c ./configuration/test.env -p 8080 -u azureuser -w au -d '.me;.com;.sx;.ru:.la;.tech;.net;.top;.pw;.goog;.org;.eu;.ms;.microsoft;.se;.ip;.co;.click;.online;.us;.xyz;.pro;.info;.best;.re;.love;.at'
-    ```
+    vscode ➜ /workspaces/test-proxy (main) $ ```./scripts/proxy-global-tool.sh -a deploy -k mitmproxy -c ./configuration/test.env -p 8080 -u azureuser -w au -d '.me;.com;.sx;.ru:.la;.tech;.net;.top;.pw;.goog;.org;.eu;.ms;.microsoft;.se;.ip;.co;.click;.online;.us;.xyz;.pro;.info;.best;.re;.love;.at'```
 
     When the deployment is completed, the following variables are displayed in the terminal:
 
@@ -161,9 +151,7 @@ You need to install the following pre-requisite on your machine.
 
 Once the deployment is completed, you can test the proxy is fully functionning using the following command:
 
-```bash
-    vscode ➜ /workspaces/test-proxy (main) $ ./scripts/proxy-global-tool.sh -a test -c ./configuration/test.env
-```
+    vscode ➜ /workspaces/test-proxy (main) $ ```./scripts/proxy-global-tool.sh -a test -c ./configuration/test.env```
 
 The test will open "http://ifconfig.me" without proxy to know the local public IP address. Then it will call "http://ifconfig.me" and "https://ifconfig.me" through the proxy to get the public IP address of the proxy, it will test the proxy is supporting 'http' and 'https'.
 It the same command line for Squid Proxy and mitmproxy. The mitmproxy requires a Certificate Authority for the authentication with the proxy.
@@ -173,9 +161,8 @@ It the same command line for Squid Proxy and mitmproxy. The mitmproxy requires a
 In the Dev Container, you can use the curl command to test the Squid proxy using the '--proxy' option to set the proxy url with the following format: "http://[user]:[password]@[hostname]:[port]/"
     For instance:
 
-```bash
-    vscode ➜ /workspaces/test-proxy (main) $ curl --proxy http://azureuser:au@pipprxdev3315proxy.swedencentral.cloudapp.azure.com:8080/ https://ifconfig.me
-```
+
+vscode ➜ /workspaces/test-proxy (main) $ ```curl --proxy http://azureuser:au@pipprxdev3315proxy.swedencentral.cloudapp.azure.com:8080/ https://ifconfig.me```
 
 ### Using the mitmproxy with curl
 
@@ -189,9 +176,7 @@ For instance the command line below create the local file containing the Certifi
 
 For instance, below a command line to use the mitmproxy:
 
-```bash
-    vscode ➜ /workspaces/test-proxy (main) $ curl -s --cacert /tmp/tmp.iLzGuERXY3/ca.crt --proxy http://azureuser:au@pipprxdev3315proxy.swedencentral.cloudapp.azure.com:8080/ https://ifconfig.me
-```
+vscode ➜ /workspaces/test-proxy (main) $ ```curl -s --cacert /tmp/tmp.iLzGuERXY3/ca.crt --proxy http://azureuser:au@pipprxdev3315proxy.swedencentral.cloudapp.azure.com:8080/ https://ifconfig.me```
 
 When mitmproxy is installed, by default it creates a certificate authority and the associated key under ~/.mitmproxy on the proxy virtual machine hard drive. With the current deployment, the certificate authority is created in the installation script, and the certificate is stored under the folder '/usr/local/bin/mitmproxy/cert'. The path of the certificate is defined in the file '/usr/local/bin/mitmproxy/mitmproxy.sh' which launch the proxy with the option '--set confdir=' (see below).
 
@@ -282,37 +267,27 @@ If on your browser, you enter an url associated with a domain name which is not 
 
 By default, the mitmproxy use the file '/var/log/mitmproxy/mitmproxy.log' to store the default logs. This file can contain for instance the certificate issue.
 
-```bash
-    azureuser@proxyprxdevXXXX:~$ sudo cat /var/log/mitmproxy/mitmproxy.log
-```
+azureuser@proxyprxdevXXXX:~$ ```sudo cat /var/log/mitmproxy/mitmproxy.log```
 
 The log file '/var/log/mitmproxy/access.log' contains the list of http requests supported by the proxy:
 
-```bash
-    azureuser@proxyprxdevXXXX:~$ sudo cat /var/log/mitmproxy/access.log
-```
+azureuser@proxyprxdevXXXX:~$ ```sudo cat /var/log/mitmproxy/access.log```
 
 The log file '/var/log/mitmproxy/dump.log' contains the body of the http requests when the proxy is configured to dump the http requests (see next paragraph).
 
-```bash
-    azureuser@proxyprxdevXXXX:~$ sudo cat /var/log/mitmproxy/dump.log
-```
+azureuser@proxyprxdevXXXX:~$ ```sudo cat /var/log/mitmproxy/dump.log```
 
 ### Using deep packet inspection with mitmproxy
 
 If you want to configure the proxy to dump the body of the https request, you need to set the variable 'DUMP_PROXY' to true. 
 
-```bash
-    azureuser@proxyprxdevXXXX:~$ sudo vi /etc/environment
-```
+azureuser@proxyprxdevXXXX:~$ ```sudo vi /etc/environment```
 
 Edit the file '/etc/environment' and set DUMP_PROXY=true
 
 Then restart the proxy with the following command line:
 
-```bash
-    azureuser@proxyprxdevXXXX:~$ sudo systemctl restart mitmproxy.service
-```
+azureuser@proxyprxdevXXXX:~$ ```sudo systemctl restart mitmproxy.service```
 
 Moreover, if you use Wireshark, you can get the SSL keys used by mitmproxy to encrypt the traffic from the file:   
 /var/log/mitmproxy/sslkeylogfile.txt
@@ -324,15 +299,11 @@ Further information [here](https://docs.mitmproxy.org/stable/howto-wireshark-tls
 
 The log file '/var/log/squid/access.log' contains the list of http requests supported by the proxy:
 
-```bash
-    azureuser@proxyprxdevXXXX:~$ sudo cat /var/log/squid/access.log
-```
+azureuser@proxyprxdevXXXX:~$ ```sudo cat /var/log/squid/access.log```
 
 If you run the following command, you can list all the requests which are blocked by the proxy:
 
-```bash
-    azureuser@proxyprxdevXXXX:~$ sudo cat /var/log/squid/access.log | grep DENIED
-```
+azureuser@proxyprxdevXXXX:~$ ```sudo cat /var/log/squid/access.log | grep DENIED```
 
 By default, Squid proxy is not configured to support Deep Packet Inspection.
 
@@ -340,6 +311,4 @@ By default, Squid proxy is not configured to support Deep Packet Inspection.
 
 Once you are done with your tests, you can remove the proxy infrastructure running the following command:
 
-```bash
-    vscode ➜ /workspaces/test-proxy (main) $ ./scripts/proxy-global-tool.sh -a undeploy -c ./configuration/test.env
-```
+vscode ➜ /workspaces/test-proxy (main) $ ```./scripts/proxy-global-tool.sh -a undeploy -c ./configuration/test.env```
