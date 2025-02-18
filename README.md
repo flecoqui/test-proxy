@@ -101,6 +101,9 @@ You need to install the following pre-requisite on your machine.
         vscode ➜ /workspaces/test-proxy (main) $ az login
     ```
 
+    vscode ➜ /workspaces/test-proxy (main) $ `az login`
+
+
 ## How to deploy and test the proxy infrastructure
 
 1. Before deploying the infrastructure, you need first to get a connection with your Microsoft Entra ID Tenant and Azure Subscription from the Dev Container terminal runninng the following comamnds.  
