@@ -2,16 +2,17 @@
 
 ## Introduction
 
-This repository contains the documentations and the code to deploy either a Squid proxy (https://www.squid-cache.org/) and or mitmproxy (https://mitmproxy.org/) in your Azure Subscription.
-If you need to deploy services and applications in Azure behind a proxy. You could test this deployment using proxies deployed from this repository. Moreover, from a security perspective, those proxies could be used to capture all the endpoints used by your applications or services in checking the proxy log file 'access.log'.
+This repository contains the documentations and the code to deploy either a Squid proxy (https://www.squid-cache.org/) and or a mitmproxy (https://mitmproxy.org/) running in a virtual machine in your Azure Subscription.  
+
+If you need to test, deploy services and applications running behind a proxy. You could test this deployment using proxies deployed from this repository. Moreover, from a security perspective, those proxies could be used to capture all the endpoints used by your applications or services in checking the proxy log file 'access.log'.  
 
 By default, with the Squid proxy is configured and deployed to support end-to-end SSL handshake. With this configuration the client applications will accept the connection to the services through the proxy as it's an end-to-end SSL handshake.  
 ![Windows](./docs/README/squidproxy-small.png)
 
-At least, with mitmproxy, it's possible to decrypt the SSL traffic. In that case, the SSL handshake occurs between the mitmproxy and the services.   
+At least, with the mitmproxy, it's possible to decrypt the SSL traffic. In that case, the SSL handshake occurs between the mitmproxy and the services.   
 ![Windows](./docs/README/mitmproxy-small.png)
 
-This document contains the following chapters:
+This document contains the following chapters:  
 
 - How to use Dev Container in Visual Studio Code: from your Dev Container, it will be easier to deploy and test your proxies  
 - How to deploy and test the proxy infrastructure
@@ -221,7 +222,7 @@ Now, the Squid proxy is running, you can also configure your Browser to use your
 
 ### Using the mitmproxy with your Browser
 
-When the Squid proxy is running, you can also configure your Browser to use your proxy, you will also need to install the mitmproxy certificate authority on your machine.  
+When the mitmproxy is running, you can also configure your Browser to use your proxy, you will also need to install the mitmproxy certificate authority on your machine.  
 
 1. On your Browser, click on the 3 dots button on the navigation bar. The menu is displayed, select the submenu 'Settings'  
 ![Windows](./docs/README/configure-browser-1.png)
@@ -256,7 +257,6 @@ Click on 'Windows' Key and 'R' key, enter 'mmc.exe' in the edit box to launch th
 ![Windows](./docs/README/install-certificate-11.png)
 16. Now you can see the contoso.com certificate in the list of 'Trusted Root Certificate Authorities->Certificates'  
 ![Windows](./docs/README/install-certificate-12.png)
-
 17. Now, you can use your browser to open for instance the web site 'bing.com'. Then click on the button close the 'url' edit box to display the web site certificate. Click on the link 'Connection is secure'  
 ![Windows](./docs/README/certificate-1.png)
 18. Click on the link 'Certificate is valid'  
