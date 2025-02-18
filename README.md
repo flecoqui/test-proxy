@@ -101,7 +101,7 @@ You need to install the following pre-requisite on your machine.
         vscode ➜ /workspaces/test-proxy (main) $ az login
     ```
 
-    vscode ➜ /workspaces/test-proxy (main) $ ```az login```
+        vscode ➜ /workspaces/test-proxy (main) $ ```az login```
 
 
 ## How to deploy and test the proxy infrastructure
